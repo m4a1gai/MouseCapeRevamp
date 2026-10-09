@@ -99,6 +99,18 @@ public struct CursorArt {
         return ctx.makeImage()
     }
 
+    /// Where the hot spot lands for a slot at a given point size.
+    ///
+    /// Shared by the apply path and the .cape writer so a theme cannot end up
+    /// with one hot spot on screen and a different one on disk.
+    public func resolvedHotSpot(for slot: CursorSlot, pointSize: CGSize) -> CGPoint {
+        if hotSpotIsExplicit { return hotSpot(forPointSize: pointSize) }
+        // GIFs and frame folders carry no hot spot, so follow where macOS puts
+        // it for this cursor role - that is what centres resize and crosshair.
+        return CGPoint(x: slot.defaultHotSpot.x / slot.defaultSize.width  * pointSize.width,
+                       y: slot.defaultHotSpot.y / slot.defaultSize.height * pointSize.height)
+    }
+
     /// Picks representation scales that never upscale past the source art.
     /// Always includes 1x and 2x; adds the native scale when the source has the
     /// detail to back it, which keeps the cursor crisp when the accessibility

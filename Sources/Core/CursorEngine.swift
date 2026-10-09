@@ -90,13 +90,7 @@ public struct CursorEngine {
         let reps = art.representations(pointSize: size, scales: scales)
         guard !reps.isEmpty else { throw CursorEngineError.couldNotBuildRepresentations }
 
-        // GIFs and frame folders carry no hot spot, so fall back to where macOS
-        // puts it for this cursor role - that is what centres resize and
-        // crosshair cursors correctly.
-        let hotSpot: CGPoint = art.hotSpotIsExplicit
-            ? art.hotSpot(forPointSize: size)
-            : CGPoint(x: slot.defaultHotSpot.x / slot.defaultSize.width  * size.width,
-                      y: slot.defaultHotSpot.y / slot.defaultSize.height * size.height)
+        let hotSpot = art.resolvedHotSpot(for: slot, pointSize: size)
         var outSeed: Int32 = 0
 
         let err = slot.identifier.withCString { ptr -> CGError in

@@ -77,12 +77,16 @@ public struct Cape {
     public func write(to url: URL) throws {
         var cursors: [String: Any] = [:]
         for (identifier, art) in self.cursors {
-            let slot = CursorCatalog.slot(for: identifier)
-            let size = slot?.defaultSize ?? art.pixelSize
+            // Render at the aspect-preserving size, exactly as applying does.
+            // Using the slot's stock size here is what baked a squashed 28x40
+            // Busy cursor into saved profiles.
+            let size = art.fittedPointSize(base: CursorArt.baseSize)
             let scales = art.suggestedScales(pointSize: size)
             let reps = art.representations(pointSize: size, scales: scales).compactMap(pngData)
             guard !reps.isEmpty else { continue }
-            let hot = art.hotSpot(forPointSize: size)
+            let hot = CursorCatalog.slot(for: identifier)
+                .map { art.resolvedHotSpot(for: $0, pointSize: size) }
+                ?? art.hotSpot(forPointSize: size)
             cursors[identifier] = [
                 "FrameCount": art.frames.count,
                 "FrameDuration": art.frameDuration,
