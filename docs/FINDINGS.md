@@ -152,3 +152,54 @@ resizeUp/Down/UpDown         -> com.apple.cursor.21/22/23       ✅
 6. 覆盖层自绘（无法在后台隐藏系统光标）
 
 唯一剩下的是辅助功能的颜色/大小设置，改色不改形。
+
+
+---
+
+# 更正：箭头其实能换（ArrowS / IBeamS）
+
+> 上面两轮的结论「箭头和文本光标无法替换」**是错的**，这里更正。
+
+错在一个很蠢的地方：我扫 `CGSCursorNameForSystemCursor` 时只扫到 ID 45 就停了，因为 9 以后连续全是 `NULL`，我以为到头了。实际上后面还有：
+
+```
+  0 -> com.apple.coregraphics.Arrow      ← 写入被静默丢弃
+  1 -> com.apple.coregraphics.IBeam      ← 写入被静默丢弃
+  2..8 -> IBeamXOR / Alias / Copy / Move / ArrowCtx / Wait / Empty
+100 -> com.apple.coregraphics.ArrowS     ← 可写
+101 -> com.apple.coregraphics.IBeamS     ← 可写
+```
+
+（线索来自 sdmj76/Mousecape-swiftUI，它扫到 128 并按名字里含 "arrow"/"ibeam" 收集同义词。）
+
+## 实测结果
+
+对全部 11 个名字逐个写入品红测试图再回读：
+
+| 标识符 | 结果 |
+|---|---|
+| `com.apple.coregraphics.Arrow` | 忽略 |
+| `com.apple.coregraphics.IBeam` | 忽略 |
+| **`com.apple.coregraphics.ArrowS`** | **可写** |
+| **`com.apple.coregraphics.IBeamS`** | **可写** |
+| 其余 7 个 coregraphics | 可写 |
+
+所以第一轮「9 个系统光标全部锁死」也是错的——实际只有 2 个旧名字只读。
+
+写 `ArrowS` 之后回读 `Arrow` 会返回**新写入的图**，说明两者指向同一个光标，`ArrowS` 是可写别名。屏幕截图确认：系统箭头确实变成了自定义图像。
+
+之前那次「写 ArrowS 没反应」的测试是我自己的测试工具有问题——`CGWarpMouseCursorPosition` 移动鼠标不触发光标刷新，和测悬停时踩的是同一个坑。改用真实 mouse-moved 事件后立刻就看到了。
+
+## 新的坑：这几个光标无法注销
+
+| 操作 | 结果 |
+|---|---|
+| `CGSRemoveRegisteredCursor(ArrowS)` | 错误 1000 |
+| `CoreCursorUnregisterAll()` | 返回 0，但 ArrowS 不受影响 |
+| `CoreCursorCopyImages(0)` | 返回的也是被覆盖后的图，拿不到原始副本 |
+
+**也就是说：改了就回不去，除非把原图写回。** 所以必须在第一次写入前备份原图，这正是原版 Mousecape `backup.m` 的作用。
+
+另外 `Wait`（沙滩球）系统原版是 30 帧，但注册接口上限 24 帧，所以还原时只能恢复 24 帧。
+
+彻底干净的还原方式仍然是**注销重登或重启**。

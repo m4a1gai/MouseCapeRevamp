@@ -14,6 +14,7 @@ func usage() -> Never {
       mousecape apply <src> --to <id>      Apply one source to one identifier
       mousecape export <dir> <out.cape>    Package a folder into a .cape
       mousecape restore                    Restore all system cursors
+      mousecape resnapshot                 Re-snapshot the stock cursors
       mousecape profiles                   List saved profiles
       mousecape save <dir> <name>          Save a folder as a named profile
       mousecape use <name> [--size N]       Switch to a saved profile
@@ -41,7 +42,7 @@ switch command {
 case "list":
     print("WRITABLE (\(CursorCatalog.writable.count) slots)")
     for slot in CursorCatalog.writable {
-        let mark = engine.isRegistered(slot.identifier) ? "●" : "○"
+        let mark = ProfileStore.shared.themedIdentifiers.contains(slot.identifier) ? "●" : "○"
         let use = CursorCatalog.appKitUsage[slot.identifier].map { "  — \($0)" } ?? ""
         print(String(format: "  %@ %-22s %-22s %.0fx%.0f%@", mark,
                      (slot.name as NSString).utf8String!,
@@ -54,7 +55,7 @@ case "list":
     }
 
 case "status":
-    let overridden = CursorCatalog.writable.filter { engine.isRegistered($0.identifier) }
+    let overridden = engine.themedSlots()
     if overridden.isEmpty {
         print("No cursor overrides active — all stock.")
     } else {
@@ -149,6 +150,17 @@ case "apply":
     }
     print("\n\(applied) applied, \(skipped) skipped, \(failed) failed.")
     if applied > 0 { print("Run `mousecape restore` to undo.") }
+
+case "resnapshot":
+    // Use after a logout/restart, when the system cursors are known pristine.
+    StockBackup.shared.forget()
+    engine.restoreAll()
+    var saved = 0
+    for slot in CursorCatalog.writable where StockBackup.needsBackup(slot) {
+        StockBackup.shared.captureIfNeeded(slot, engine: engine)
+        if StockBackup.shared.hasBackup(for: slot.identifier) { saved += 1 }
+    }
+    print("已重新抓取 \(saved) 个系统原始光标作为还原基准。")
 
 case "profiles":
     for p in ProfileStore.shared.profiles() {

@@ -75,6 +75,18 @@ public final class ProfileStore {
         set { Self.defaults.set(newValue, forKey: Self.activeKey) }
     }
 
+    private static let themedKey = "ThemedIdentifiers"
+
+    /// Which slots currently carry themed art.
+    ///
+    /// Restoring re-registers the stock CoreGraphics cursors rather than
+    /// removing them, so "is registered" is not the same as "is themed" and
+    /// cannot be used to count what the user has changed.
+    public var themedIdentifiers: Set<String> {
+        get { Set(Self.defaults.stringArray(forKey: Self.themedKey) ?? []) }
+        set { Self.defaults.set(Array(newValue).sorted(), forKey: Self.themedKey) }
+    }
+
     /// Longest-edge render size in points, shared by the app and the CLI.
     public var baseSize: Double {
         get {

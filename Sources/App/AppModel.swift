@@ -68,7 +68,7 @@ final class AppModel: ObservableObject {
     }
 
     func refreshActive() {
-        activeCount = CursorCatalog.writable.filter { engine.isRegistered($0.identifier) }.count
+        activeCount = engine.themedSlots().count
     }
 
     func refreshProfiles() { profiles = store.profiles() }
@@ -278,9 +278,7 @@ final class AppModel: ObservableObject {
     // MARK: - Test pane
 
     /// Slots that currently have themed art registered.
-    func liveSlots() -> [CursorSlot] {
-        CursorCatalog.writable.filter { engine.isRegistered($0.identifier) }
-    }
+    func liveSlots() -> [CursorSlot] { engine.themedSlots() }
 
     /// The NSCursor to show for a slot in the test pane.
     ///

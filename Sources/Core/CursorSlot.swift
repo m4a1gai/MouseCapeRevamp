@@ -12,10 +12,9 @@ public struct CursorSlot: Sendable, Hashable {
     public let defaultSize: CGSize
     public let defaultHotSpot: CGPoint
 
-    /// The nine `com.apple.coregraphics.*` names are system-defined. Since
-    /// macOS 26 the window server accepts writes to them and then discards the
-    /// data, so there is no point sending art for these.
-    public var isProtected: Bool { identifier.hasPrefix("com.apple.coregraphics.") }
+    /// Only the two legacy aliases reject writes. Everything else, including
+    /// the ArrowS / IBeamS variants they forward to, is writable.
+    public var isProtected: Bool { CursorCatalog.legacyAliases[identifier] != nil }
 
     init(_ identifier: String, _ name: String,
          _ w: CGFloat, _ h: CGFloat, _ hx: CGFloat, _ hy: CGFloat) {
@@ -71,26 +70,51 @@ public enum CursorCatalog {
         CursorSlot("com.apple.cursor.41", "Cell",              18, 18,  9,  9),
         CursorSlot("com.apple.cursor.42", "Zoom In",           28, 26, 12, 11),
         CursorSlot("com.apple.cursor.43", "Zoom Out",          28, 26, 12, 11),
+
+        // The CoreGraphics system cursors. Writes to the legacy "Arrow" and
+        // "IBeam" names are silently discarded on macOS 26, but the ArrowS and
+        // IBeamS variants (system cursor ids 100 and 101, which only turn up if
+        // you scan CGSCursorNameForSystemCursor past 45) accept them and drive
+        // the same on-screen cursor.
+        CursorSlot("com.apple.coregraphics.ArrowS",   "Arrow",            28, 40,  5,  5),
+        CursorSlot("com.apple.coregraphics.IBeamS",   "I-Beam",           23, 22, 12, 11),
+        CursorSlot("com.apple.coregraphics.Wait",     "Wait (beachball)", 24, 24, 12, 11),
+        CursorSlot("com.apple.coregraphics.ArrowCtx", "Arrow Context",     8,  8,  1,  1),
+        CursorSlot("com.apple.coregraphics.IBeamXOR", "I-Beam XOR",        8,  8,  1,  1),
+        CursorSlot("com.apple.coregraphics.Alias",    "Alias",             8,  8,  1,  1),
+        CursorSlot("com.apple.coregraphics.Copy",     "Copy",              8,  8,  1,  1),
+        CursorSlot("com.apple.coregraphics.Move",     "Move",             11, 16,  1,  1),
+        CursorSlot("com.apple.coregraphics.Empty",    "Empty",             4,  4,  1,  1),
     ]
 
-    /// System-defined slots. Kept so capes that mention them can be parsed and
-    /// so the UI can explain precisely what will be skipped.
+    /// Old identifiers the window server will not accept, mapped to the variant
+    /// that works. Capes in the wild are written against the old names, so
+    /// everything resolves through here before being applied.
+    public static let legacyAliases: [String: String] = [
+        "com.apple.coregraphics.Arrow": "com.apple.coregraphics.ArrowS",
+        "com.apple.coregraphics.IBeam": "com.apple.coregraphics.IBeamS",
+    ]
+
+    /// Resolves a legacy identifier to the one that can actually be written.
+    public static func resolve(_ identifier: String) -> String {
+        legacyAliases[identifier] ?? identifier
+    }
+
+    /// Kept so capes mentioning them still parse. Both forward to a writable
+    /// variant via `legacyAliases`.
     public static let locked: [CursorSlot] = [
-        CursorSlot("com.apple.coregraphics.Arrow",     "Arrow",            28, 40,  5,  5),
-        CursorSlot("com.apple.coregraphics.IBeam",     "I-Beam",           23, 22, 12, 11),
-        CursorSlot("com.apple.coregraphics.Wait",      "Wait (beachball)", 24, 24, 12, 11),
-        CursorSlot("com.apple.coregraphics.IBeamXOR",  "I-Beam XOR",        8,  8,  1,  1),
-        CursorSlot("com.apple.coregraphics.Alias",     "Alias",             8,  8,  1,  1),
-        CursorSlot("com.apple.coregraphics.Copy",      "Copy",              8,  8,  1,  1),
-        CursorSlot("com.apple.coregraphics.Move",      "Move",              8,  8,  1,  1),
-        CursorSlot("com.apple.coregraphics.ArrowCtx",  "Arrow Context",     8,  8,  1,  1),
-        CursorSlot("com.apple.coregraphics.Empty",     "Empty",             4,  4,  1,  1),
+        CursorSlot("com.apple.coregraphics.Arrow", "Arrow (legacy name)", 28, 40, 5, 5),
+        CursorSlot("com.apple.coregraphics.IBeam", "I-Beam (legacy name)", 23, 22, 12, 11),
     ]
 
     public static let all: [CursorSlot] = writable + locked
 
+    /// Looks up a slot, following legacy aliases so a cape written against
+    /// "com.apple.coregraphics.Arrow" lands on the writable ArrowS slot.
     public static func slot(for identifier: String) -> CursorSlot? {
-        all.first { $0.identifier == identifier }
+        let resolved = resolve(identifier)
+        return writable.first { $0.identifier == resolved }
+            ?? all.first { $0.identifier == identifier }
     }
 
     /// AppKit cursors that map onto each slot, for explaining where a cursor
@@ -112,5 +136,7 @@ public enum CursorCatalog {
         "com.apple.cursor.24": "NSCursor.contextualMenu",
         "com.apple.cursor.25": "NSCursor.disappearingItem",
         "com.apple.cursor.26": "NSCursor.IBeamForVerticalLayout",
+        "com.apple.coregraphics.ArrowS": "NSCursor.arrow",
+        "com.apple.coregraphics.IBeamS": "NSCursor.IBeam",
     ]
 }

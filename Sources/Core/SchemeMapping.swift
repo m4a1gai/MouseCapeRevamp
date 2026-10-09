@@ -48,6 +48,20 @@ public enum SchemeMapping {
         "drag link":              "com.apple.cursor.2",
         "resize n-s":             "com.apple.cursor.23",
         "resize w-e":             "com.apple.cursor.19",
+        // These used to be unreachable; the ArrowS / IBeamS variants take them.
+        "normal select":          "com.apple.coregraphics.ArrowS",
+        "normal":                 "com.apple.coregraphics.ArrowS",
+        "arrow":                  "com.apple.coregraphics.ArrowS",
+        "standard":               "com.apple.coregraphics.ArrowS",
+        "default":                "com.apple.coregraphics.ArrowS",
+        "pointer":                "com.apple.coregraphics.ArrowS",
+        "text select":            "com.apple.coregraphics.IBeamS",
+        "text":                   "com.apple.coregraphics.IBeamS",
+        "ibeam":                  "com.apple.coregraphics.IBeamS",
+        "i beam":                 "com.apple.coregraphics.IBeamS",
+        "i beam (text select)":   "com.apple.coregraphics.IBeamS",
+        "beachball":              "com.apple.coregraphics.Wait",
+        "spinning wait":          "com.apple.coregraphics.Wait",
         // Simplified Chinese, as shipped by most Chinese cursor packs
         "链接选择":             "com.apple.cursor.13",
         "链接":                 "com.apple.cursor.13",
@@ -68,15 +82,18 @@ public enum SchemeMapping {
         "水平调整大小":         "com.apple.cursor.19",
         "对角线调整大小1":      "com.apple.cursor.30",
         "对角线调整大小2":      "com.apple.cursor.34",
+        "正常选择":             "com.apple.coregraphics.ArrowS",
+        "正常選擇":             "com.apple.coregraphics.ArrowS",
+        "箭头":                 "com.apple.coregraphics.ArrowS",
+        "指针":                 "com.apple.coregraphics.ArrowS",
+        "文本选择":             "com.apple.coregraphics.IBeamS",
+        "文字選取":             "com.apple.coregraphics.IBeamS",
+        "文本":                 "com.apple.coregraphics.IBeamS",
     ]
 
-    /// Names that refer to cursors macOS will not let us replace.
-    private static let lockedNames: Set<String> = [
-        "normal select", "normal", "arrow", "standard", "default", "pointer",
-        "text select", "text", "ibeam", "i-beam", "i beam", "i beam (text select)",
-        "beachball", "spinning wait",
-        "正常选择", "文本选择", "箭头", "指针",
-    ]
+    /// Nothing is name-locked any more: the two identifiers macOS rejects are
+    /// reached through their ArrowS / IBeamS variants instead.
+    private static let lockedNames: Set<String> = []
 
     public enum Match {
         case identifier(String)

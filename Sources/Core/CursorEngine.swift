@@ -42,6 +42,14 @@ public struct CursorEngine {
 
     // MARK: - Reading
 
+    /// Slots carrying themed art, as opposed to merely registered ones.
+    public func themedSlots() -> [CursorSlot] {
+        let themed = ProfileStore.shared.themedIdentifiers
+        return CursorCatalog.writable.filter {
+            themed.contains($0.identifier) && isRegistered($0.identifier)
+        }
+    }
+
     public func isRegistered(_ identifier: String) -> Bool {
         var size: Int = 0
         let err = identifier.withCString { ptr -> CGError in
@@ -70,6 +78,26 @@ public struct CursorEngine {
         return (size, hotSpot, Int(frameCount), Double(duration), images)
     }
 
+    /// Whatever is registered right now, as frames. Used to snapshot the stock
+    /// cursors before they are overwritten.
+    public func currentArt(for identifier: String) -> CursorArt? {
+        guard let info = registeredArt(for: identifier),
+              info.frameCount > 0,
+              let rep = info.reps.max(by: { $0.width < $1.width }) else { return nil }
+        let fh = rep.height / info.frameCount
+        guard fh > 0 else { return nil }
+        let frames = (0..<info.frameCount).compactMap {
+            rep.cropping(to: CGRect(x: 0, y: $0 * fh, width: rep.width, height: fh))
+        }
+        guard !frames.isEmpty else { return nil }
+        // Hot spot comes back in points; CursorArt keeps it in source pixels.
+        let scale = info.size.width > 0 ? Double(rep.width) / info.size.width : 1
+        return CursorArt(frames: frames,
+                         frameDuration: info.duration,
+                         hotSpot: CGPoint(x: info.hotSpot.x * scale, y: info.hotSpot.y * scale),
+                         hotSpotIsExplicit: true)
+    }
+
     // MARK: - Writing
 
     /// Registers `art` for `slot` and then verifies the server really took it.
@@ -78,9 +106,14 @@ public struct CursorEngine {
     /// kCGErrorSuccess for the protected system cursors and then throws the
     /// data away, so the return code on its own means nothing.
     @discardableResult
-    public func apply(_ art: CursorArt, to slot: CursorSlot, pointSize: CGSize? = nil) throws -> Int {
+    public func apply(_ art: CursorArt, to slot: CursorSlot,
+                      pointSize: CGSize? = nil, backingUp: Bool = true) throws -> Int {
         guard !slot.isProtected else { throw CursorEngineError.slotIsProtected(slot.identifier) }
         guard !art.frames.isEmpty else { throw CursorEngineError.noFrames }
+
+        // The CoreGraphics cursors cannot be un-registered, so stash the
+        // original before the first write or there is no way back.
+        if backingUp { StockBackup.shared.captureIfNeeded(slot, engine: self) }
 
         let art = art.limited(to: Self.maxFrameCount)
         // Preserve the source aspect ratio instead of squashing it into the
@@ -111,6 +144,10 @@ public struct CursorEngine {
         guard verify(slot.identifier, expectedFrames: art.frames.count, expectedSize: size) else {
             throw CursorEngineError.registrationSilentlyIgnored(slot.identifier)
         }
+        // Restoring stock art goes through here too, and that is not theming.
+        if backingUp {
+            ProfileStore.shared.themedIdentifiers.insert(slot.identifier)
+        }
         return art.frames.count
     }
 
@@ -132,9 +169,15 @@ public struct CursorEngine {
     // MARK: - Restoring
 
     /// Drops every override and restores the stock cursors.
+    ///
+    /// CoreCursorUnregisterAll only clears the `com.apple.cursor.N` slots; the
+    /// CoreGraphics ones have to be written back from the backup.
     @discardableResult
     public func restoreAll() -> Bool {
-        CoreCursorUnregisterAll(connection) == .success
+        let cleared = CoreCursorUnregisterAll(connection) == .success
+        StockBackup.shared.restore(engine: self)
+        ProfileStore.shared.themedIdentifiers = []
+        return cleared
     }
 
     /// Drops a single override.
