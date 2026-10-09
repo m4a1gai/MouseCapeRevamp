@@ -1,0 +1,5 @@
+build/
+MouseCape.app/
+.DS_Store
+.idea/
+*.iml
