@@ -16,7 +16,7 @@ func usage() -> Never {
       mousecape restore                    Restore all system cursors
       mousecape profiles                   List saved profiles
       mousecape save <dir> <name>          Save a folder as a named profile
-      mousecape use <name>                 Switch to a saved profile
+      mousecape use <name> [--size N]       Switch to a saved profile
       mousecape status                     Show what is currently overridden
 
     <path> may be a .cape file, or a directory holding .ani files, animated
@@ -92,7 +92,7 @@ case "apply":
         guard !slot.isProtected else {
             print("  ✕ \(label) → \(slot.name): locked by macOS, skipped"); skipped += 1; return
         }
-        let size = art.fittedPointSize(base: CGFloat(sizeOverride ?? Double(CursorArt.baseSize)))
+        let size = art.fittedPointSize(base: CGFloat(sizeOverride ?? ProfileStore.shared.baseSize))
         do {
             let n = try engine.apply(art, to: slot, pointSize: size)
             print("  ✓ \(label) → \(slot.name)  (\(n) frame\(n == 1 ? "" : "s"))")
@@ -179,7 +179,9 @@ case "save":
     print("已保存配置“\(saved.name)”，含 \(cape.cursors.count) 个光标。")
 
 case "use":
+    let useSize = value(for: "--size").flatMap { Double($0) }
     guard let name = args.first else { usage() }
+    if let useSize { ProfileStore.shared.baseSize = useSize }
     let all = ProfileStore.shared.profiles()
     guard let p = all.first(where: { $0.name == name || $0.id == name }) else {
         print("找不到配置“\(name)”。可用：")
@@ -194,8 +196,8 @@ case "use":
         var n = 0
         for (identifier, art) in cape.cursors {
             guard let slot = CursorCatalog.slot(for: identifier), !slot.isProtected else { continue }
-            if (try? engine.apply(art, to: slot,
-                                  pointSize: art.fittedPointSize(base: CursorArt.baseSize))) != nil { n += 1 }
+            let size = art.fittedPointSize(base: CGFloat(ProfileStore.shared.baseSize))
+            if (try? engine.apply(art, to: slot, pointSize: size)) != nil { n += 1 }
         }
         print("已切换到“\(p.name)”，应用 \(n) 个光标。")
     }

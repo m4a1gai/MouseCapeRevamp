@@ -32,7 +32,17 @@ final class AppModel: ObservableObject {
     @Published var themeName: String = ""
     @Published var activeCount: Int = 0
     @Published var message: String = ""
-    @Published var pointSizeScale: Double = 1.0
+    /// Longest-edge size in points that cursors are rendered at.
+    @Published var baseSize: Double = ProfileStore.shared.baseSize {
+        didSet {
+            ProfileStore.shared.baseSize = baseSize
+            scheduleLiveReapply()
+        }
+    }
+
+    public static let sizeRange: ClosedRange<Double> = 16...64
+
+    private var reapplyWork: DispatchWorkItem?
 
     @Published var profiles: [ProfileStore.Profile] = []
     @Published var selection: ProfileStore.Profile.ID?
@@ -62,6 +72,29 @@ final class AppModel: ObservableObject {
     }
 
     func refreshProfiles() { profiles = store.profiles() }
+
+    /// Re-applies the live theme shortly after the size slider settles, so the
+    /// real pointer resizes while the slider is being dragged without
+    /// re-registering on every single tick.
+    private func scheduleLiveReapply() {
+        reapplyWork?.cancel()
+        guard activeCount > 0, !pending.isEmpty else { return }
+        let work = DispatchWorkItem { [weak self] in self?.applyAll(quiet: true) }
+        reapplyWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+    }
+
+    /// Art used for the size preview: whatever is loaded, else whatever is live.
+    var previewArt: CursorArt? {
+        if let item = pending.first(where: { $0.isApplicable }), let art = item.art { return art }
+        guard let slot = liveSlots().first,
+              let info = engine.registeredArt(for: slot.identifier),
+              let rep = info.reps.first, info.frameCount > 0,
+              let first = rep.cropping(to: CGRect(x: 0, y: 0, width: rep.width,
+                                                  height: rep.height / info.frameCount))
+        else { return nil }
+        return CursorArt(frames: [first], frameDuration: 0, hotSpot: .zero)
+    }
 
     func profile(for id: ProfileStore.Profile.ID?) -> ProfileStore.Profile? {
         profiles.first { $0.id == id }
@@ -211,16 +244,20 @@ final class AppModel: ObservableObject {
 
     // MARK: - Applying
 
-    func applyAll() {
+    func applyAll(quiet: Bool = false) {
         var ok = 0, bad = 0
         for item in pending where item.isApplicable {
             guard let slot = item.slot, let art = item.art else { continue }
-            let size = art.fittedPointSize(base: CursorArt.baseSize * pointSizeScale)
+            let size = art.fittedPointSize(base: CGFloat(baseSize))
             do { try engine.apply(art, to: slot, pointSize: size); ok += 1 }
             catch { bad += 1 }
         }
         refreshActive()
-        message = bad == 0 ? "已应用 \(ok) 个光标。" : "已应用 \(ok) 个，\(bad) 个失败。"
+        if quiet {
+            message = "大小 \(Int(baseSize)) pt"
+        } else {
+            message = bad == 0 ? "已应用 \(ok) 个光标。" : "已应用 \(ok) 个，\(bad) 个失败。"
+        }
     }
 
     func restoreAll() {

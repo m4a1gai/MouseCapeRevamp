@@ -8,23 +8,37 @@ import UniformTypeIdentifiers
 struct CursorPreview: View {
     let art: CursorArt?
     var side: CGFloat = 34
+    /// When set, the frame is drawn at exactly this point size rather than
+    /// fitted into a tile, so the swatch matches what lands on screen.
+    var explicitSize: CGSize? = nil
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1.0 / 20.0)) { context in
-            ZStack {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.primary.opacity(0.06))
-                if let frame = currentFrame(at: context.date) {
-                    Image(decorative: frame, scale: 1)
-                        .interpolation(.high)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .padding(2)
-                } else {
-                    Image(systemName: "questionmark").foregroundStyle(.tertiary)
+            if let explicitSize {
+                ZStack {
+                    if let frame = currentFrame(at: context.date) {
+                        Image(decorative: frame, scale: 1)
+                            .interpolation(.high)
+                            .resizable()
+                            .frame(width: explicitSize.width, height: explicitSize.height)
+                    }
                 }
+            } else {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.primary.opacity(0.06))
+                    if let frame = currentFrame(at: context.date) {
+                        Image(decorative: frame, scale: 1)
+                            .interpolation(.high)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .padding(2)
+                    } else {
+                        Image(systemName: "questionmark").foregroundStyle(.tertiary)
+                    }
+                }
+                .frame(width: side, height: side)
             }
-            .frame(width: side, height: side)
         }
     }
 
@@ -96,6 +110,8 @@ struct ContentView: View {
             sidebar
         } detail: {
             VStack(spacing: 0) {
+                sizeBar
+                Divider()
                 Group {
                     if tab == .test { TestPane(model: model) }
                     else if model.pending.isEmpty { dropZone }
@@ -205,6 +221,50 @@ struct ContentView: View {
     }
 
     // MARK: Detail pieces
+
+    /// Size slider plus a preview drawn at the true on-screen size, with the
+    /// stock arrow beside it so there is something to judge the scale against.
+    private var sizeBar: some View {
+        HStack(spacing: 12) {
+            Text("大小").font(.callout)
+            Slider(value: $model.baseSize, in: AppModel.sizeRange, step: 1)
+                .frame(width: 170)
+            Text("\(Int(model.baseSize)) pt")
+                .font(.callout.monospacedDigit())
+                .frame(width: 44, alignment: .leading)
+                .foregroundStyle(.secondary)
+
+            Divider().frame(height: 26)
+
+            previewSwatch(title: "实际大小") {
+                if let art = model.previewArt {
+                    let size = art.fittedPointSize(base: CGFloat(model.baseSize))
+                    CursorPreview(art: art, explicitSize: size)
+                } else {
+                    Text("—").foregroundStyle(.tertiary)
+                }
+            }
+
+            previewSwatch(title: "系统箭头") {
+                Image(nsImage: NSCursor.arrow.image)
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+    }
+
+    private func previewSwatch<C: View>(title: String,
+                                        @ViewBuilder content: () -> C) -> some View {
+        VStack(spacing: 3) {
+            ZStack { content() }
+                .frame(width: 72, height: 72)
+                .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Color.primary.opacity(0.06)))
+            Text(title).font(.caption2).foregroundStyle(.secondary)
+        }
+    }
 
     private var dropZone: some View {
         VStack(spacing: 14) {

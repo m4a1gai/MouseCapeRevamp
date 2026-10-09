@@ -60,12 +60,27 @@ public final class ProfileStore {
         try? FileManager.default.removeItem(at: url)
     }
 
-    // MARK: - Remembering the active profile
+    // MARK: - Shared settings
+
+    /// The CLI has no bundle identifier, so UserDefaults.standard is a
+    /// different domain for it than for the app. Both read and write this
+    /// suite instead, otherwise the two disagree about which profile is live.
+    public static let defaults = UserDefaults(suiteName: "com.mousecaperevamp") ?? .standard
 
     private static let activeKey = "ActiveProfileID"
+    private static let baseSizeKey = "CursorBaseSize"
 
     public var activeProfileID: String? {
-        get { UserDefaults.standard.string(forKey: Self.activeKey) }
-        set { UserDefaults.standard.set(newValue, forKey: Self.activeKey) }
+        get { Self.defaults.string(forKey: Self.activeKey) }
+        set { Self.defaults.set(newValue, forKey: Self.activeKey) }
+    }
+
+    /// Longest-edge render size in points, shared by the app and the CLI.
+    public var baseSize: Double {
+        get {
+            let v = Self.defaults.double(forKey: Self.baseSizeKey)
+            return v > 0 ? v : Double(CursorArt.baseSize)
+        }
+        set { Self.defaults.set(newValue, forKey: Self.baseSizeKey) }
     }
 }
