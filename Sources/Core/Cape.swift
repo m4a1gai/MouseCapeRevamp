@@ -51,7 +51,8 @@ public struct Cape {
             cape.cursors[identifier] = CursorArt(
                 frames: frames,
                 frameDuration: duration,
-                hotSpot: CGPoint(x: hotX * scale, y: hotY * scale))
+                hotSpot: CGPoint(x: hotX * scale, y: hotY * scale),
+                hotSpotIsExplicit: true)
         }
         return cape
     }

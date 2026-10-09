@@ -83,12 +83,20 @@ public struct CursorEngine {
         guard !art.frames.isEmpty else { throw CursorEngineError.noFrames }
 
         let art = art.limited(to: Self.maxFrameCount)
-        let size = pointSize ?? slot.defaultSize
+        // Preserve the source aspect ratio instead of squashing it into the
+        // slot's stock dimensions.
+        let size = pointSize ?? art.fittedPointSize(base: CursorArt.baseSize)
         let scales = art.suggestedScales(pointSize: size)
         let reps = art.representations(pointSize: size, scales: scales)
         guard !reps.isEmpty else { throw CursorEngineError.couldNotBuildRepresentations }
 
-        let hotSpot = art.hotSpot(forPointSize: size)
+        // GIFs and frame folders carry no hot spot, so fall back to where macOS
+        // puts it for this cursor role - that is what centres resize and
+        // crosshair cursors correctly.
+        let hotSpot: CGPoint = art.hotSpotIsExplicit
+            ? art.hotSpot(forPointSize: size)
+            : CGPoint(x: slot.defaultHotSpot.x / slot.defaultSize.width  * size.width,
+                      y: slot.defaultHotSpot.y / slot.defaultSize.height * size.height)
         var outSeed: Int32 = 0
 
         let err = slot.identifier.withCString { ptr -> CGError in
@@ -117,6 +125,14 @@ public struct CursorEngine {
         return back.frameCount == expectedFrames
             && abs(back.size.width  - expectedSize.width)  < 0.5
             && abs(back.size.height - expectedSize.height) < 0.5
+    }
+
+    /// Points this process's cursor at a registered slot, for previewing.
+    public func preview(_ identifier: String) {
+        var seed: Int32 = 0
+        _ = identifier.withCString {
+            CGSSetRegisteredCursor(connection, UnsafeMutablePointer(mutating: $0), &seed)
+        }
     }
 
     // MARK: - Restoring

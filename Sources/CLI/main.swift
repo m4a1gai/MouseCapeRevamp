@@ -14,6 +14,9 @@ func usage() -> Never {
       mousecape apply <src> --to <id>      Apply one source to one identifier
       mousecape export <dir> <out.cape>    Package a folder into a .cape
       mousecape restore                    Restore all system cursors
+      mousecape profiles                   List saved profiles
+      mousecape save <dir> <name>          Save a folder as a named profile
+      mousecape use <name>                 Switch to a saved profile
       mousecape status                     Show what is currently overridden
 
     <path> may be a .cape file, or a directory holding .ani files, animated
@@ -89,7 +92,7 @@ case "apply":
         guard !slot.isProtected else {
             print("  ✕ \(label) → \(slot.name): locked by macOS, skipped"); skipped += 1; return
         }
-        let size = sizeOverride.map { CGSize(width: $0, height: $0 * slot.defaultSize.height / slot.defaultSize.width) }
+        let size = art.fittedPointSize(base: CGFloat(sizeOverride ?? Double(CursorArt.baseSize)))
         do {
             let n = try engine.apply(art, to: slot, pointSize: size)
             print("  ✓ \(label) → \(slot.name)  (\(n) frame\(n == 1 ? "" : "s"))")
@@ -146,6 +149,57 @@ case "apply":
     }
     print("\n\(applied) applied, \(skipped) skipped, \(failed) failed.")
     if applied > 0 { print("Run `mousecape restore` to undo.") }
+
+case "profiles":
+    for p in ProfileStore.shared.profiles() {
+        let mark = p.id == ProfileStore.shared.activeProfileID ? "●" : " "
+        print("  \(mark) \(p.name)\(p.isSystemDefault ? "  (内置)" : "")")
+    }
+
+case "save":
+    guard args.count >= 2 else { usage() }
+    let src = URL(fileURLWithPath: (args[0] as NSString).expandingTildeInPath)
+    let name = args[1]
+    var cape = Cape(name: name)
+    let items = (try? FileManager.default.contentsOfDirectory(
+        at: src, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+    for entry in items.sorted(by: {
+        let a = $0.deletingPathExtension().lastPathComponent
+        let b = $1.deletingPathExtension().lastPathComponent
+        let pa = SchemeMapping.priority(a), pb = SchemeMapping.priority(b)
+        return pa == pb ? a < b : pa < pb
+    }) {
+        let base = entry.deletingPathExtension().lastPathComponent
+        guard case .identifier(let id) = SchemeMapping.match(base),
+              cape.cursors[id] == nil,
+              let art = try? CursorImporter.importArt(at: entry) else { continue }
+        cape.cursors[id] = art
+    }
+    let saved = try ProfileStore.shared.save(cape, as: name)
+    print("已保存配置“\(saved.name)”，含 \(cape.cursors.count) 个光标。")
+
+case "use":
+    guard let name = args.first else { usage() }
+    let all = ProfileStore.shared.profiles()
+    guard let p = all.first(where: { $0.name == name || $0.id == name }) else {
+        print("找不到配置“\(name)”。可用：")
+        all.forEach { print("  \($0.name)") }
+        exit(1)
+    }
+    if p.isSystemDefault {
+        print(engine.restoreAll() ? "已还原系统默认指针。" : "还原失败。")
+    } else if let url = p.url {
+        _ = engine.restoreAll()   // don't leave the previous profile mixed in
+        let cape = try Cape.load(from: url)
+        var n = 0
+        for (identifier, art) in cape.cursors {
+            guard let slot = CursorCatalog.slot(for: identifier), !slot.isProtected else { continue }
+            if (try? engine.apply(art, to: slot,
+                                  pointSize: art.fittedPointSize(base: CursorArt.baseSize))) != nil { n += 1 }
+        }
+        print("已切换到“\(p.name)”，应用 \(n) 个光标。")
+    }
+    ProfileStore.shared.activeProfileID = p.id
 
 case "export":
     guard args.count >= 2 else { usage() }

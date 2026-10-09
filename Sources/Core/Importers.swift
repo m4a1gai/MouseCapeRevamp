@@ -54,7 +54,7 @@ public enum CursorImporter {
         let avg = delays.filter { $0 > 0 }.average ?? 0
         return CursorArt(frames: frames,
                          frameDuration: frames.count > 1 ? max(avg, minimumFrameDuration) : 0,
-                         hotSpot: .zero)
+                         hotSpot: .zero, hotSpotIsExplicit: false)
     }
 
     private static func gifDelay(_ src: CGImageSource, _ index: Int) -> Double {
@@ -91,7 +91,7 @@ public enum CursorImporter {
         let parsed = imageFiles.compactMap { delaySuffix($0) }.average ?? 0
         return CursorArt(frames: frames,
                          frameDuration: frames.count > 1 ? max(parsed, minimumFrameDuration) : 0,
-                         hotSpot: .zero)
+                         hotSpot: .zero, hotSpotIsExplicit: false)
     }
 
     private static func leadingNumber(_ url: URL) -> Int {
@@ -160,7 +160,8 @@ public enum CursorImporter {
         let jiffies = rates.isEmpty ? Double(displayRate)
                                     : Double(rates.reduce(0, +)) / Double(rates.count)
         let duration = frames.count > 1 ? max(jiffies / 60.0, minimumFrameDuration) : 0
-        return CursorArt(frames: frames, frameDuration: duration, hotSpot: hotSpot)
+        return CursorArt(frames: frames, frameDuration: duration,
+                         hotSpot: hotSpot, hotSpotIsExplicit: true)
     }
 
     private static func forEachChunk(in data: Data, from: Int, to: Int,

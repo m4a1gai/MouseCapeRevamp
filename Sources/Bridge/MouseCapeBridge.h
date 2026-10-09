@@ -77,6 +77,10 @@ extern CGError CoreCursorCopyImages(CGSConnectionID cid,
                                     unsigned long *frameCount,
                                     CGFloat *frameDuration);
 
+/// Sets this connection's cursor to a registered name. Used by the test pane
+/// to show what a themed cursor actually looks like in use.
+extern CGError CGSSetRegisteredCursor(CGSConnectionID cid, char *cursorName, int *seed);
+
 /// Maps a system cursor id to its registered name, or NULL when the id is not
 /// one of the nine system-defined cursors.
 extern char *CGSCursorNameForSystemCursor(CGSCursorID cursor);

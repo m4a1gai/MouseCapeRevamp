@@ -10,16 +10,39 @@ public struct CursorArt {
     public var frameDuration: Double
     /// Hot spot in SOURCE PIXEL coordinates, origin top-left.
     public var hotSpot: CGPoint
+    /// True when the source format carried a real hot spot (.ani / .cur do,
+    /// GIFs and frame folders do not). When false the slot's own hot spot is
+    /// used instead, which is what makes resize and crosshair cursors line up.
+    public var hotSpotIsExplicit: Bool
 
     public var pixelSize: CGSize {
         guard let f = frames.first else { return .zero }
         return CGSize(width: f.width, height: f.height)
     }
 
-    public init(frames: [CGImage], frameDuration: Double, hotSpot: CGPoint) {
+    public init(frames: [CGImage], frameDuration: Double,
+                hotSpot: CGPoint, hotSpotIsExplicit: Bool = false) {
         self.frames = frames
         self.frameDuration = frameDuration
         self.hotSpot = hotSpot
+        self.hotSpotIsExplicit = hotSpotIsExplicit
+    }
+
+    /// The default size a cursor is rendered at, in points, before the user's
+    /// scale is applied. Roughly matches the stock macOS cursors.
+    public static let baseSize: CGFloat = 32
+
+    /// Point size that preserves the source aspect ratio.
+    ///
+    /// Forcing art into a slot's stock size is what stretches a square 96x96
+    /// drawing into, say, the 28x40 of the Busy cursor. Fit the longest edge to
+    /// `base` instead and let the other edge follow the source proportions.
+    public func fittedPointSize(base: CGFloat) -> CGSize {
+        let px = pixelSize
+        guard px.width > 0, px.height > 0 else { return CGSize(width: base, height: base) }
+        return px.width >= px.height
+            ? CGSize(width: base, height: (base * px.height / px.width).rounded())
+            : CGSize(width: (base * px.width / px.height).rounded(), height: base)
     }
 
     /// Hot spot converted into the point coordinate space of `pointSize`.
@@ -41,7 +64,8 @@ public struct CursorArt {
         }
         return CursorArt(frames: picked,
                          frameDuration: total / Double(limit),
-                         hotSpot: hotSpot)
+                         hotSpot: hotSpot,
+                         hotSpotIsExplicit: hotSpotIsExplicit)
     }
 
     /// Builds one representation per scale factor.
