@@ -71,7 +71,22 @@ final class AppModel: ObservableObject {
         activeCount = engine.themedSlots().count
     }
 
-    func refreshProfiles() { profiles = store.profiles() }
+    /// Arrow (or first) frame of each profile, for the sidebar tiles. Cached
+    /// because building it means reading every cape off disk.
+    @Published var thumbnails: [String: CGImage] = [:]
+    /// identifier -> author, shown on the header card.
+    @Published var themeAuthor: String = ""
+
+    func refreshProfiles() {
+        profiles = store.profiles()
+        for profile in profiles where thumbnails[profile.id] == nil {
+            guard let url = profile.url, let cape = try? Cape.load(from: url) else { continue }
+            let preferred = ["com.apple.coregraphics.ArrowS", "com.apple.cursor.13"]
+            let art = preferred.compactMap { cape.cursors[$0] }.first
+                ?? cape.cursors.sorted { $0.key < $1.key }.first?.value
+            if let frame = art?.frames.first { thumbnails[profile.id] = frame }
+        }
+    }
 
     /// Re-applies the live theme shortly after the size slider settles, so the
     /// real pointer resizes while the slider is being dragged without
@@ -130,6 +145,7 @@ final class AppModel: ObservableObject {
         guard !cape.cursors.isEmpty else { message = "没有可保存的光标。"; return }
         do {
             let profile = try store.save(cape, as: name)
+            thumbnails[profile.id] = nil
             refreshProfiles()
             selection = profile.id
             store.activeProfileID = profile.id
@@ -143,6 +159,7 @@ final class AppModel: ObservableObject {
 
     func deleteProfile(_ profile: ProfileStore.Profile) {
         store.delete(profile)
+        thumbnails[profile.id] = nil
         refreshProfiles()
         if selection == profile.id {
             selection = ProfileStore.Profile.systemDefault.id
@@ -163,6 +180,7 @@ final class AppModel: ObservableObject {
         do {
             let cape = try Cape.load(from: url)
             themeName = cape.name
+            themeAuthor = cape.author
             pending = cape.cursors
                 .sorted { $0.key < $1.key }
                 .map { identifier, art in
@@ -194,9 +212,11 @@ final class AppModel: ObservableObject {
                 && children.contains { $0.lastPathComponent.lowercased().contains("frame") }
             entries = looksLikeFrames ? [url] : children
             themeName = url.lastPathComponent
+            themeAuthor = ""
         } else {
             entries = [url]
             themeName = url.deletingPathExtension().lastPathComponent
+            themeAuthor = ""
         }
 
         entries = entries.sorted {

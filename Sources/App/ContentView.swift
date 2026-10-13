@@ -2,12 +2,12 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-// MARK: - Animated preview
+// MARK: - Shared pieces
 
 /// Plays a cursor's frames at its real frame duration.
 struct CursorPreview: View {
     let art: CursorArt?
-    var side: CGFloat = 34
+    var side: CGFloat = 44
     /// When set, the frame is drawn at exactly this point size rather than
     /// fitted into a tile, so the swatch matches what lands on screen.
     var explicitSize: CGSize? = nil
@@ -15,24 +15,17 @@ struct CursorPreview: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1.0 / 20.0)) { context in
             if let explicitSize {
-                ZStack {
-                    if let frame = currentFrame(at: context.date) {
-                        Image(decorative: frame, scale: 1)
-                            .interpolation(.high)
-                            .resizable()
-                            .frame(width: explicitSize.width, height: explicitSize.height)
-                    }
+                if let frame = currentFrame(at: context.date) {
+                    Image(decorative: frame, scale: 1)
+                        .interpolation(.high).resizable()
+                        .frame(width: explicitSize.width, height: explicitSize.height)
                 }
             } else {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color.primary.opacity(0.06))
                     if let frame = currentFrame(at: context.date) {
                         Image(decorative: frame, scale: 1)
-                            .interpolation(.high)
-                            .resizable()
+                            .interpolation(.high).resizable()
                             .aspectRatio(contentMode: .fit)
-                            .padding(2)
                     } else {
                         Image(systemName: "questionmark").foregroundStyle(.tertiary)
                     }
@@ -49,8 +42,6 @@ struct CursorPreview: View {
         return art.frames[((step % art.frames.count) + art.frames.count) % art.frames.count]
     }
 }
-
-// MARK: - Hover target that shows a real system cursor
 
 /// An area that shows one themed cursor while the pointer is inside it.
 ///
@@ -85,12 +76,23 @@ struct CursorHoverArea: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSView {
-        let v = HoverView()
-        v.cursor = cursor
-        return v
+        let v = HoverView(); v.cursor = cursor; return v
     }
     func updateNSView(_ nsView: NSView, context: Context) {
         (nsView as? HoverView)?.cursor = cursor
+    }
+}
+
+/// The rounded tile that both grids are built from.
+struct TileBackground<C: View>: View {
+    var height: CGFloat = 92
+    @ViewBuilder var content: () -> C
+    var body: some View {
+        ZStack { content() }
+            .frame(maxWidth: .infinity)
+            .frame(height: height)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.primary.opacity(0.07)))
     }
 }
 
@@ -105,46 +107,40 @@ struct ContentView: View {
 
     enum Tab: String, CaseIterable { case contents = "主题内容", test = "测试指针" }
 
+    private let cursorColumns = [GridItem(.adaptive(minimum: 104), spacing: 10)]
+    private let profileColumns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
+
     var body: some View {
         NavigationSplitView {
             sidebar
         } detail: {
             VStack(spacing: 0) {
+                headerCard
                 sizeBar
                 Divider()
                 Group {
                     if tab == .test { TestPane(model: model) }
                     else if model.pending.isEmpty { dropZone }
-                    else { cursorList }
+                    else { cursorGrid }
                 }
                 Divider()
                 footer
             }
             .navigationTitle(model.themeName.isEmpty ? "MouseCape Revamp" : model.themeName)
-            .navigationSubtitle(model.activeCount == 0
-                                ? "当前为系统默认指针"
-                                : "已生效 \(model.activeCount) 个指针")
             .toolbar {
                 ToolbarItem(placement: .navigation) {
-                    Button { choose() } label: {
-                        Label("导入指针…", systemImage: "plus")
-                    }
-                    .help("导入指针文件夹、.ani 或 .cape")
+                    Button { choose() } label: { Label("导入指针…", systemImage: "plus") }
+                        .help("导入指针文件夹、.ani 或 .cape")
                 }
                 ToolbarItem(placement: .principal) {
                     Picker("", selection: $tab) {
                         ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .frame(width: 220)
+                    .pickerStyle(.segmented).labelsHidden().frame(width: 220)
                 }
                 if model.isUnsavedImport {
                     ToolbarItem(placement: .primaryAction) {
-                        Button("保存为配置…") {
-                            newName = model.themeName
-                            askingName = true
-                        }
+                        Button("保存为配置…") { newName = model.themeName; askingName = true }
                     }
                 }
                 ToolbarItem(placement: .primaryAction) {
@@ -153,7 +149,7 @@ struct ContentView: View {
                 }
             }
         }
-        .frame(minWidth: 820, minHeight: 560)
+        .frame(minWidth: 900, minHeight: 620)
         .onDrop(of: [.fileURL], isTargeted: $isTargeted) { providers in
             guard let provider = providers.first else { return false }
             _ = provider.loadObject(ofClass: URL.self) { url, _ in
@@ -173,54 +169,85 @@ struct ContentView: View {
 
     // MARK: Sidebar
 
-    private var selectionBinding: Binding<ProfileStore.Profile.ID?> {
-        Binding(get: { model.selection },
-                set: { id in
-                    if let id, let profile = model.profile(for: id) { model.selectProfile(profile) }
-                    else { model.selection = id }
-                })
-    }
-
     private var sidebar: some View {
         VStack(spacing: 0) {
             // NavigationSplitView does not inset this column below the title
-            // bar here, so reserve that strip explicitly or the first row sits
-            // under the traffic lights.
-            Color.clear.frame(height: 28)
-
-            List(selection: selectionBinding) {
-                Section("配置") {
+            // bar here, so reserve that strip explicitly.
+            Color.clear.frame(height: 30)
+            ScrollView {
+                LazyVGrid(columns: profileColumns, spacing: 8) {
                     ForEach(model.profiles) { profile in
-                        HStack(spacing: 8) {
-                            Image(systemName: profile.isSystemDefault
-                                  ? "arrow.uturn.backward.circle" : "cursorarrow.rays")
-                                .foregroundStyle(profile.isSystemDefault
-                                                 ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tint))
-                            Text(profile.name).lineLimit(1)
-                        }
-                        .tag(profile.id)
-                        .contextMenu {
-                            if !profile.isSystemDefault {
-                                Button("删除", role: .destructive) { model.deleteProfile(profile) }
-                            }
-                        }
-                    }
-                    if model.isUnsavedImport {
-                        HStack(spacing: 8) {
-                            Image(systemName: "tray.and.arrow.down").foregroundStyle(.orange)
-                            Text(model.themeName.isEmpty ? "未保存的导入" : model.themeName)
-                                .lineLimit(1).italic()
-                        }
-                        .tag(Optional<ProfileStore.Profile.ID>.none)
+                        profileTile(profile)
                     }
                 }
+                .padding(.horizontal, 10)
+                .padding(.bottom, 12)
             }
-            .listStyle(.sidebar)
         }
-        .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 280)
+        .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 300)
     }
 
-    // MARK: Detail pieces
+    private func profileTile(_ profile: ProfileStore.Profile) -> some View {
+        let selected = model.selection == profile.id
+        return VStack(spacing: 5) {
+            TileBackground(height: 58) {
+                if profile.isSystemDefault {
+                    Image(systemName: "arrow.uturn.backward.circle")
+                        .font(.system(size: 22)).foregroundStyle(.secondary)
+                } else if let thumb = model.thumbnails[profile.id] {
+                    Image(decorative: thumb, scale: 1)
+                        .interpolation(.high).resizable()
+                        .aspectRatio(contentMode: .fit).padding(8)
+                } else {
+                    Image(systemName: "cursorarrow").foregroundStyle(.tertiary)
+                }
+            }
+            Text(profile.name)
+                .font(.caption).lineLimit(1).truncationMode(.middle)
+        }
+        .padding(5)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(selected ? Color.accentColor.opacity(0.25) : .clear))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(selected ? Color.accentColor : .clear, lineWidth: 2))
+        .contentShape(Rectangle())
+        .onTapGesture { model.selectProfile(profile) }
+        .contextMenu {
+            if !profile.isSystemDefault {
+                Button("删除", role: .destructive) { model.deleteProfile(profile) }
+            }
+        }
+    }
+
+    // MARK: Detail
+
+    private var headerCard: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(model.themeName.isEmpty ? "未选择主题" : model.themeName)
+                        .font(.title3.weight(.semibold))
+                    if model.activeCount > 0 && !model.isUnsavedImport {
+                        Text("已应用")
+                            .font(.caption2.weight(.medium))
+                            .padding(.horizontal, 7).padding(.vertical, 2)
+                            .background(Capsule().fill(Color.accentColor.opacity(0.3)))
+                    }
+                }
+                Text(model.themeAuthor.isEmpty
+                     ? (model.activeCount == 0 ? "当前为系统默认指针"
+                                               : "已生效 \(model.activeCount) 个指针")
+                     : "作者：\(model.themeAuthor)")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.primary.opacity(0.05)))
+        .padding(.horizontal, 14)
+        .padding(.top, 10)
+    }
 
     /// Size slider plus a preview drawn at the true on-screen size, with the
     /// stock arrow beside it so there is something to judge the scale against.
@@ -228,39 +255,28 @@ struct ContentView: View {
         HStack(spacing: 12) {
             Text("大小").font(.callout)
             Slider(value: $model.baseSize, in: AppModel.sizeRange, step: 1)
-                .frame(width: 170)
+                .frame(width: 160)
             Text("\(Int(model.baseSize)) pt")
                 .font(.callout.monospacedDigit())
-                .frame(width: 44, alignment: .leading)
-                .foregroundStyle(.secondary)
-
+                .frame(width: 44, alignment: .leading).foregroundStyle(.secondary)
             Divider().frame(height: 26)
-
-            previewSwatch(title: "实际大小") {
+            swatch("实际大小") {
                 if let art = model.previewArt {
-                    let size = art.fittedPointSize(base: CGFloat(model.baseSize))
-                    CursorPreview(art: art, explicitSize: size)
-                } else {
-                    Text("—").foregroundStyle(.tertiary)
-                }
+                    CursorPreview(art: art,
+                                  explicitSize: art.fittedPointSize(base: CGFloat(model.baseSize)))
+                } else { Text("—").foregroundStyle(.tertiary) }
             }
-
-            previewSwatch(title: "系统箭头") {
-                Image(nsImage: NSCursor.arrow.image)
-            }
-
+            swatch("系统箭头") { Image(nsImage: NSCursor.arrow.image) }
             Spacer()
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 14).padding(.vertical, 10)
     }
 
-    private func previewSwatch<C: View>(title: String,
-                                        @ViewBuilder content: () -> C) -> some View {
+    private func swatch<C: View>(_ title: String, @ViewBuilder content: () -> C) -> some View {
         VStack(spacing: 3) {
             ZStack { content() }
                 .frame(width: 72, height: 72)
-                .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
                                 .fill(Color.primary.opacity(0.06)))
             Text(title).font(.caption2).foregroundStyle(.secondary)
         }
@@ -276,31 +292,46 @@ struct ContentView: View {
                 .font(.callout).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center).frame(maxWidth: 420)
             Spacer()
-            lockedNotice
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(isTargeted ? Color.accentColor.opacity(0.08) : Color.clear)
     }
 
-    private var cursorList: some View {
-        List(model.pending) { item in
-            HStack(spacing: 12) {
-                CursorPreview(art: item.art)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.sourceName).font(.body)
-                    Text(subtitle(for: item)).font(.caption).foregroundStyle(.secondary)
+    private var cursorGrid: some View {
+        ScrollView {
+            LazyVGrid(columns: cursorColumns, spacing: 10) {
+                ForEach(model.pending) { item in
+                    VStack(spacing: 5) {
+                        TileBackground {
+                            ZStack {
+                                CursorPreview(art: item.art)
+                                if case .ready = item.status {} else {
+                                    VStack {
+                                        HStack {
+                                            Spacer()
+                                            statusBadge(item.status).padding(5)
+                                        }
+                                        Spacer()
+                                    }
+                                }
+                            }
+                        }
+                        Text(label(for: item)).font(.caption).lineLimit(1)
+                        Text(sublabel(for: item))
+                            .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    .help(tooltip(for: item))
                 }
-                Spacer()
-                statusBadge(item.status)
             }
-            .padding(.vertical, 3)
+            .padding(14)
         }
-        .listStyle(.inset)
     }
 
     private var footer: some View {
         HStack {
-            Text(model.message).font(.callout).foregroundStyle(.secondary)
+            Text(model.pending.isEmpty ? model.message
+                 : "\(model.pending.filter(\.isApplicable).count) 个指针  ·  \(model.message)")
+                .font(.callout).foregroundStyle(.secondary)
             Spacer()
             if !model.pending.isEmpty {
                 Button("导出 .cape…") { exportCape() }
@@ -312,45 +343,44 @@ struct ContentView: View {
         .padding(12)
     }
 
-    private var lockedNotice: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "lock.fill").foregroundStyle(.secondary)
-            Text("macOS 26 不再允许任何 App 替换**箭头**和**文本光标**，系统会静默丢弃。其余指针都能正常替换。")
-                .font(.caption).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: 460).padding(.bottom, 16)
-    }
-
     // MARK: Helpers
 
-    private func subtitle(for item: PendingCursor) -> String {
+    private func label(for item: PendingCursor) -> String {
+        guard let slot = item.slot else { return item.sourceName }
+        return CursorCatalog.displayName(slot)
+    }
+
+    private func sublabel(for item: PendingCursor) -> String {
         switch item.status {
-        case .locked:            return "被 macOS 锁定，无法替换"
-        case .claimed(let who):  return "已由“\(who)”覆盖"
-        case .failed(let why):   return why
-        case .unmatched:         return "没有对应的 macOS 指针"
-        case .ready:             break
-        }
-        guard let slot = item.slot else { return "没有对应的 macOS 指针" }
-        var parts = ["→ \(slot.name)"]
-        if let art = item.art, art.frames.count > 1 {
+        case .locked:            return "系统不允许替换"
+        case .claimed(let who):  return "已由「\(who)」覆盖"
+        case .failed:            return "读取失败"
+        case .unmatched:         return "无对应指针"
+        case .ready:
+            guard let art = item.art, art.frames.count > 1 else { return item.sourceName }
             let capped = min(art.frames.count, CursorEngine.maxFrameCount)
-            parts.append(capped < art.frames.count ? "\(capped)/\(art.frames.count) 帧" : "\(capped) 帧")
+            return "\(capped) 帧"
         }
-        if let use = CursorCatalog.appKitUsage[slot.identifier] { parts.append(use) }
-        return parts.joined(separator: "  ·  ")
+    }
+
+    private func tooltip(for item: PendingCursor) -> String {
+        var parts = [item.sourceName]
+        if let slot = item.slot {
+            parts.append(slot.identifier)
+            if let use = CursorCatalog.appKitUsage[slot.identifier] { parts.append(use) }
+        }
+        if case .failed(let why) = item.status { parts.append(why) }
+        return parts.joined(separator: "\n")
     }
 
     @ViewBuilder
     private func statusBadge(_ status: PendingCursor.Status) -> some View {
         switch status {
-        case .ready:   Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-        case .locked:  Image(systemName: "lock.fill").foregroundStyle(.orange)
-        case .claimed: Text("重复").font(.caption2).foregroundStyle(.secondary)
-        case .unmatched: Text("—").foregroundStyle(.tertiary)
-        case .failed(let why):
-            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red).help(why)
+        case .ready:     EmptyView()
+        case .locked:    Image(systemName: "lock.fill").foregroundStyle(.orange)
+        case .claimed:   Image(systemName: "square.on.square").foregroundStyle(.secondary)
+        case .unmatched: Image(systemName: "minus.circle").foregroundStyle(.tertiary)
+        case .failed:    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
         }
     }
 
@@ -376,8 +406,7 @@ struct ContentView: View {
 /// which ones took and what they look like in use.
 struct TestPane: View {
     @ObservedObject var model: AppModel
-
-    private let columns = [GridItem(.adaptive(minimum: 150), spacing: 12)]
+    private let columns = [GridItem(.adaptive(minimum: 128), spacing: 10)]
 
     var body: some View {
         let slots = model.liveSlots()
@@ -392,14 +421,31 @@ struct TestPane: View {
                 }
                 .frame(maxWidth: .infinity).padding(.top, 60)
             } else {
-                Text("把鼠标移到下面任意方块上，就能看到对应的指针。右侧说明了它在系统里什么时候出现。")
+                Text("把鼠标移到方块上，就能看到对应的真实指针。下面一行说明它在系统里什么时候出现。")
                     .font(.callout).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 14).padding(.top, 12)
 
-                LazyVGrid(columns: columns, spacing: 12) {
+                LazyVGrid(columns: columns, spacing: 10) {
                     ForEach(slots, id: \.identifier) { slot in
-                        tile(for: slot)
+                        VStack(spacing: 5) {
+                            TileBackground {
+                                ZStack {
+                                    if let thumb = model.liveThumbnail(for: slot) {
+                                        Image(decorative: thumb, scale: 1)
+                                            .interpolation(.high).resizable()
+                                            .aspectRatio(contentMode: .fit).padding(10)
+                                    }
+                                    CursorHoverArea(cursor: model.nsCursor(for: slot))
+                                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                }
+                            }
+                            Text(CursorCatalog.displayName(slot)).font(.caption).lineLimit(1)
+                            Text(whereYouSeeIt(slot))
+                                .font(.caption2).foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center).lineLimit(2)
+                                .frame(height: 26, alignment: .top)
+                        }
                     }
                 }
                 .padding(14)
@@ -407,30 +453,12 @@ struct TestPane: View {
         }
     }
 
-    private func tile(for slot: CursorSlot) -> some View {
-        VStack(spacing: 6) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.primary.opacity(0.06))
-                if let thumb = model.liveThumbnail(for: slot) {
-                    Image(decorative: thumb, scale: 1)
-                        .interpolation(.high).resizable()
-                        .aspectRatio(contentMode: .fit).padding(8)
-                }
-                CursorHoverArea(cursor: model.nsCursor(for: slot))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            .frame(height: 74)
-            Text(slot.name).font(.caption).lineLimit(1)
-            Text(whereYouSeeIt(slot)).font(.caption2).foregroundStyle(.secondary)
-                .multilineTextAlignment(.center).lineLimit(2)
-                .frame(height: 26, alignment: .top)
-        }
-    }
-
     /// Plain-language note about where each cursor turns up in daily use.
     private func whereYouSeeIt(_ slot: CursorSlot) -> String {
         switch slot.identifier {
+        case "com.apple.coregraphics.ArrowS": return "绝大多数界面"
+        case "com.apple.coregraphics.IBeamS": return "输入框、选文字"
+        case "com.apple.coregraphics.Wait":   return "系统无响应"
         case "com.apple.cursor.13": return "悬停链接、按钮"
         case "com.apple.cursor.11": return "拖动中（抓取）"
         case "com.apple.cursor.12": return "可拖动区域"
@@ -450,10 +478,7 @@ struct TestPane: View {
         case "com.apple.cursor.40": return "帮助"
         case "com.apple.cursor.41": return "表格单元格"
         case "com.apple.cursor.42", "com.apple.cursor.43": return "放大 / 缩小"
-        default:
-            return slot.identifier.hasPrefix("com.apple.cursor.2")
-                || slot.identifier.hasPrefix("com.apple.cursor.3")
-                ? "窗口边缘调整" : "调整大小"
+        default: return "窗口边缘调整"
         }
     }
 }

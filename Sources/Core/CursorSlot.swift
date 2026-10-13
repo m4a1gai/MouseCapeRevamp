@@ -117,6 +117,66 @@ public enum CursorCatalog {
             ?? all.first { $0.identifier == identifier }
     }
 
+    /// Chinese names, using the same cursor-role wording as the Windows cursor
+    /// schemes most downloadable packs are built around.
+    public static let chineseNames: [String: String] = [
+        "com.apple.coregraphics.ArrowS":   "正常选择",
+        "com.apple.coregraphics.IBeamS":   "文本选择",
+        "com.apple.coregraphics.Wait":     "沙滩球",
+        "com.apple.coregraphics.ArrowCtx": "右键箭头",
+        "com.apple.coregraphics.IBeamXOR": "文本反色",
+        "com.apple.coregraphics.Alias":    "替身",
+        "com.apple.coregraphics.Copy":     "复制",
+        "com.apple.coregraphics.Move":     "移动",
+        "com.apple.coregraphics.Empty":    "空光标",
+        "com.apple.cursor.2":  "拖拽替身",
+        "com.apple.cursor.3":  "不可用",
+        "com.apple.cursor.4":  "忙碌",
+        "com.apple.cursor.5":  "拖拽复制",
+        "com.apple.cursor.7":  "精确选择",
+        "com.apple.cursor.8":  "精确选择 2",
+        "com.apple.cursor.9":  "相机 2",
+        "com.apple.cursor.10": "相机",
+        "com.apple.cursor.11": "抓取中",
+        "com.apple.cursor.12": "可抓取",
+        "com.apple.cursor.13": "链接选择",
+        "com.apple.cursor.14": "计数向上",
+        "com.apple.cursor.15": "计数向下",
+        "com.apple.cursor.16": "计数上下",
+        "com.apple.cursor.17": "向左调整",
+        "com.apple.cursor.18": "向右调整",
+        "com.apple.cursor.19": "水平调整大小",
+        "com.apple.cursor.20": "十字选择",
+        "com.apple.cursor.21": "向上调整",
+        "com.apple.cursor.22": "向下调整",
+        "com.apple.cursor.23": "垂直调整大小",
+        "com.apple.cursor.24": "候选",
+        "com.apple.cursor.25": "拖出消失",
+        "com.apple.cursor.26": "竖排文本",
+        "com.apple.cursor.27": "窗口 右",
+        "com.apple.cursor.28": "窗口 左右",
+        "com.apple.cursor.29": "窗口 右上",
+        "com.apple.cursor.30": "沿对角线调整 1",
+        "com.apple.cursor.31": "窗口 上",
+        "com.apple.cursor.32": "窗口 上下",
+        "com.apple.cursor.33": "窗口 左上",
+        "com.apple.cursor.34": "沿对角线调整 2",
+        "com.apple.cursor.35": "窗口 右下",
+        "com.apple.cursor.36": "窗口 下",
+        "com.apple.cursor.37": "窗口 左下",
+        "com.apple.cursor.38": "窗口 左",
+        "com.apple.cursor.39": "方形调整",
+        "com.apple.cursor.40": "说明选择",
+        "com.apple.cursor.41": "单元格",
+        "com.apple.cursor.42": "放大",
+        "com.apple.cursor.43": "缩小",
+    ]
+
+    /// Localised display name, falling back to the English one.
+    public static func displayName(_ slot: CursorSlot) -> String {
+        chineseNames[slot.identifier] ?? slot.name
+    }
+
     /// AppKit cursors that map onto each slot, for explaining where a cursor
     /// shows up. Verified by tracing `SLSSetRegisteredCursor` from AppKit.
     public static let appKitUsage: [String: String] = [
